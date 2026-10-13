@@ -103,9 +103,11 @@ function sfxGameOver() {
     setTimeout(()=>playSound(150,0.5,'sawtooth',0.1,-100),200)
 }
 const ST= {
-    MENU:0,PLAY:1,PAUSE:2,OVER:3,SCORES:4
+    MENU:0,PLAY:1,PAUSE:2,OVER:3,SCORES:4,UPGRADE:5
 };
 let gs=ST.MENU,score=0,combo=0,comboT=0,level=1,gt=0,anim=0;
+let runStats={kills:0,ricochetKills:0,bounces:0,shots:0,nearMisses:0,startTime:0};
+let upgradeChoices=[],upgradeReturnState=ST.PLAY,bossLevelSpawned=0,slowMo=0,ghostPath=[],ghostTimer=0,lastKillWasRicochet=false,offeredUpgradeIds=[];
 let shake= {
     x:0,y:0,i:0,d:0
 };
@@ -255,12 +257,13 @@ function spawnPickup(x,y) {
 }
 function fire() {
     if(P.fc>0||P.energy<5)return;
+    runStats.shots++;
     const sp=12,c=Math.cos(P.a),s=Math.sin(P.a);
     const mk=(ang,off=0)=> {
         const ox=Math.cos(P.a+1.57)*off;
         const oy=Math.sin(P.a+1.57)*off;
         bullets.push( {
-            x:P.x+c*22+ox,y:P.y+s*22+oy,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,r:3.5,dmg:1,rl:P.rc,life:200,trail:[],own:'p',pierce:P.wl>=3,hue:190,age:0
+            x:P.x+c*22+ox,y:P.y+s*22+oy,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,r:3.5,dmg:(P.damage||1),rl:P.rc,life:200,trail:[],own:'p',pierce:P.wl>=3,hue:25,age:0,bounces:0
         });
 
     };
@@ -370,6 +373,9 @@ function colCirc(a,b) {
     return dist(a,b)<a.r+b.r
 }
 function killEnemy(e,src='p') {
+    runStats.kills++;
+    if(src==='p' && e.type==='boss') { score+=1500; P.xp+=250; addText(e.x,e.y-45,'BOSS DESTROYED +1500','#ffb347',24); boom(e.x,e.y,55,'#ff8c32',10); }
+    if(src==='p' && e.type!=='boss' && lastKillWasRicochet) { runStats.ricochetKills++; score+=75; P.xp+=75; addText(e.x,e.y-45,'BANK SHOT +75','#ffb347',15); lastKillWasRicochet=false; }
     const cols= {
         chase:'#f55',shoot:'#ff5',orbit:'#5ff',split:'#f5f',geo:'#5f5',mini:'#fa5',swarm:'#f95'
     };
@@ -395,12 +401,47 @@ function killEnemy(e,src='p') {
     if(Math.random()<.3)spawnPickup(e.x,e.y);
 
 }
+const UPGRADE_POOL=[
+    {id:'phase',name:'PHASE SHOT',desc:'Bullets pierce one extra enemy',apply(){P.wl=Math.min(3,P.wl+1);P.fr=Math.max(4,P.fr-1);}},
+    {id:'echo',name:'ECHO CORE',desc:'Increase ricochet strength and range',apply(){P.rc=Math.min(8,P.rc+2);}},
+    {id:'overdrive',name:'OVERDRIVE',desc:'Restore energy and reduce dash cooldown',apply(){P.maxE=Math.min(200,P.maxE+20);P.energy=P.maxE;P.dc=Math.max(0,P.dc-20);}},
+    {id:'repair',name:'NANO REPAIR',desc:'Restore 35 health immediately',apply(){P.hp=Math.min(P.mhp,P.hp+35);}},
+    {id:'prism',name:'PRISM CORE',desc:'Fire faster and replenish energy',apply(){P.fr=Math.max(3,P.fr-1);P.energy=Math.min(P.maxE,P.energy+30);}},
+    {id:'shield',name:'AEGIS FIELD',desc:'Gain 30 shield points',apply(){P.sh=Math.min(80,P.sh+30);}},
+    {id:'vitality',name:'REINFORCED HULL',desc:'Increase max health by 20 and heal 20',apply(){P.mhp+=20;P.hp=Math.min(P.mhp,P.hp+20);}},
+    {id:'capacitor',name:'DEEP CAPACITOR',desc:'Increase max energy by 35',apply(){P.maxE=Math.min(250,P.maxE+35);P.energy=P.maxE;}},
+    {id:'magnet',name:'SALVAGE MAGNET',desc:'Collect pickups from farther away',apply(){P.pickupRange=(P.pickupRange||0)+35;}},
+    {id:'kinetic',name:'KINETIC ROUNDS',desc:'Shots hit harder and score bonus points',apply(){P.damage=(P.damage||1)+0.25;score+=150*level;}},
+    {id:'afterburn',name:'AFTERBURNER',desc:'Dash travels farther and grants brief protection',apply(){P.dashBonus=(P.dashBonus||0)+.2;P.dc=Math.max(0,P.dc-10);}},
+    {id:'scavenger',name:'COMBAT SCAVENGER',desc:'Gain 250 score and restore 15 health',apply(){score+=250;P.hp=Math.min(P.mhp,P.hp+15);}}
+];
+function offerUpgrades(){
+    // Avoid recently offered choices. Once the available variety runs low, recycle the pool.
+    let pool=UPGRADE_POOL.filter(u=>!offeredUpgradeIds.includes(u.id));
+    if(pool.length<3){offeredUpgradeIds=[];pool=[...UPGRADE_POOL];}
+    upgradeChoices=[];
+    while(upgradeChoices.length<3&&pool.length){const i=Math.random()*pool.length|0;const choice=pool.splice(i,1)[0];upgradeChoices.push(choice);offeredUpgradeIds.push(choice.id);}
+    if(offeredUpgradeIds.length>UPGRADE_POOL.length-3)offeredUpgradeIds=offeredUpgradeIds.slice(-Math.max(0,UPGRADE_POOL.length-3));
+    upgradeReturnState=ST.PLAY; gs=ST.UPGRADE;
+}
+function chooseUpgrade(index){
+    if(gs!==ST.UPGRADE||!upgradeChoices[index])return;
+    upgradeChoices[index].apply(); addText(P.x,P.y-35,upgradeChoices[index].name,'#ffb347',18);
+    upgradeChoices=[]; gs=upgradeReturnState; sfxLevelUp();
+}
+function spawnBoss(){
+    const hp=18+level*4;
+    enemies.push({x:W()/2,y:-65,vx:0,vy:0,r:36,type:'boss',hp,mhp:hp,a:0,rs:.012,fc:45,oa:0,or:0,verts:6,fl:0,sc:0,speed:1.2,fireRate:65,spawnT:35,age:0,pulsePhase:0});
+    addText(W()/2,H()*.22,'WARNING: THE ARCHITECT','#ff5252',25); addShake(12,20);
+}
 function checkLevel() {
     // Preserve excess XP and allow a large score gain to cross multiple levels.
     while(P.xp>=P.nextLv) {
         P.xp-=P.nextLv;
         level++;
         P.nextLv=Math.floor(P.nextLv*1.4);
+        if(level%5===0) offerUpgrades();
+        if(level>=4 && level%4===0 && bossLevelSpawned!==level){ spawnBoss(); bossLevelSpawned=level; }
         addText(W()/2,H()/2,`LEVEL ${level}!`,'#0ff',36);
         addShake(10,20);
         sfxLevelUp();
@@ -412,6 +453,8 @@ function checkLevel() {
             });
 
         }
+        // Pause level processing when a milestone upgrade screen opens, preserving any excess XP.
+        if(gs===ST.UPGRADE) break;
     }
 }
 function applyPickup(p) {
@@ -488,6 +531,8 @@ function startGame() {
     gwells=[];
     ftexts=[];
     score=0;
+    runStats={kills:0,ricochetKills:0,bounces:0,shots:0,nearMisses:0,startTime:Date.now()};
+    bossLevelSpawned=0; upgradeChoices=[]; offeredUpgradeIds=[]; ghostPath=[]; ghostTimer=0; lastKillWasRicochet=false;
     combo=0;
     comboT=0;
     level=1;
@@ -503,6 +548,7 @@ document.addEventListener('keydown',e=> {
     keys[e.code]=true;if(e.code==='Escape'||e.code==='KeyP') {
         if(gs===ST.PLAY)gs=ST.PAUSE;else if(gs===ST.PAUSE)gs=ST.PLAY;
     }
+    if(gs===ST.UPGRADE&&['Digit1','Digit2','Digit3'].includes(e.code)){chooseUpgrade(Number(e.code.slice(-1))-1);return;}
     if(e.code==='Enter'||e.code==='Space') {
         if(gs===ST.MENU) {
             startGame();return
@@ -528,7 +574,9 @@ C.addEventListener('mousemove',e=> {
     mx=e.clientX;my=e.clientY
 });
 C.addEventListener('mousedown',e=> {
-    initAudio();mdown=true;if(gs===ST.MENU) {
+    initAudio();
+    if(gs===ST.UPGRADE){ const cardW=Math.min(260,W()*.27),gap=16,total=cardW*3+gap*2,start=(W()-total)/2; const idx=Math.floor((e.clientX-start)/(cardW+gap)); if(e.clientX>=start&&e.clientX<=start+total&&idx>=0&&idx<3)chooseUpgrade(idx); return; }
+    mdown=true;if(gs===ST.MENU) {
         startGame();return
     }
     if(gs===ST.OVER) {
@@ -555,6 +603,7 @@ C.addEventListener('touchstart',e=> {
     if(gs===ST.PAUSE) {
         gs=ST.PLAY;return
     }
+    if(gs===ST.UPGRADE){const cardW=Math.min(260,W()*.27),gap=16,total=cardW*3+gap*2,start=(W()-total)/2;const idx=Math.floor((e.touches[0].clientX-start)/(cardW+gap));if(idx>=0&&idx<3)chooseUpgrade(idx);return;}
     const t=e.touches[0];if(e.touches.length===1) {
         if(t.clientX<W()/3) {
             vj.on=true;vj.x=t.clientX;vj.y=t.clientY;vj.dx=0;vj.dy=0;
@@ -592,7 +641,7 @@ C.addEventListener('click',e=> {
 // Update
 function updateP() {
     let mvx=0,mvy=0;
-    const sp=P.dash?12:5;
+    const sp=P.dash?12*(1+(P.dashBonus||0)):5;
     if(keys.KeyW||keys.ArrowUp)mvy=-1;
     if(keys.KeyS||keys.ArrowDown)mvy=1;
     if(keys.KeyA||keys.ArrowLeft)mvx=-1;
@@ -718,6 +767,12 @@ function updateE() {
                 break;
 
             }
+            case'boss': {
+                const tx=W()/2+Math.sin(gt*.012)*W()*.28, ty=H()*.24+Math.sin(gt*.021)*35;
+                e.vx+=(tx-e.x)*.012; e.vy+=(ty-e.y)*.012; e.vx*=.96; e.vy*=.96;
+                e.fc--; if(e.fc<=0){ const base=Math.atan2(P.y-e.y,P.x-e.x); for(let k=-1;k<=1;k++){const a=base+k*.22;bullets.push({x:e.x+Math.cos(a)*e.r,y:e.y+Math.sin(a)*e.r,vx:Math.cos(a)*4.2,vy:Math.sin(a)*4.2,r:5,dmg:14,rl:0,life:180,trail:[],own:'e',pierce:false,hue:0,age:0});} e.fc=e.fireRate; }
+                break;
+            }
             case'split':case'geo': {
                 const a=Math.atan2(P.y-e.y,P.x-e.x);
                 e.vx+=Math.cos(a)*e.speed*.025;
@@ -780,6 +835,7 @@ function updateB() {
             if(b.x<0||b.x>W()) {
                 b.vx*=-1;
                 b.rl--;
+                b.bounces=(b.bounces||0)+1; runStats.bounces++;
                 b.dmg*=1.4;
                 addShake(3,4);
                 boom(b.x,b.y,6,'#0ff',2);
@@ -789,6 +845,7 @@ function updateB() {
             if(b.y<0||b.y>H()) {
                 b.vy*=-1;
                 b.rl--;
+                b.bounces=(b.bounces||0)+1; runStats.bounces++;
                 b.dmg*=1.4;
                 addShake(3,4);
                 boom(b.x,b.y,6,'#0ff',2);
@@ -817,6 +874,8 @@ function updateB() {
                     e.vy+=Math.sin(a)*2.5;
                     boom(b.x,b.y,6,`hsl(${b.hue},100%,70%)`,2);
                     if(e.hp<=0) {
+                        if((b.bounces||0)>0){ghostPath=b.trail.map(pt=>({x:pt.x,y:pt.y}));ghostPath.push({x:b.x,y:b.y});ghostTimer=55;slowMo=5;}
+                        lastKillWasRicochet=(b.bounces||0)>0;
                         killEnemy(e);
                         enemies.splice(j,1)
                     }
@@ -865,9 +924,10 @@ function updatePicks() {
         p.vy*=.97;
         // Magnet effect when close
         const d=dist(p,P);
-        if(d<120) {
+        const magnetRange=120+(P.pickupRange||0);
+        if(d<magnetRange) {
             const a=Math.atan2(P.y-p.y,P.x-p.x);
-            const f=Math.max(0,(120-d)/120)*3;
+            const f=Math.max(0,(magnetRange-d)/magnetRange)*3;
             p.vx+=Math.cos(a)*f*.3;
             p.vy+=Math.sin(a)*f*.3;
 
@@ -906,6 +966,7 @@ function updateShake() {
 }
 function update() {
     if(gs!==ST.PLAY)return;
+    if(ghostTimer>0)ghostTimer--; else ghostPath=[];
     gt++;
     if(comboT>0) {
         comboT--;
@@ -932,8 +993,8 @@ function update() {
     updateShake();
     // Spawning
     const sr=Math.max(25,110-level*7);
-    if(gt%sr===0)spawnEnemy();
-    if(level>=3&&gt%sr===Math.floor(sr/2))spawnEnemy();
+    if(!enemies.some(e=>e.type==='boss')){if(gt%sr===0)spawnEnemy();
+    if(level>=3&&gt%sr===Math.floor(sr/2))spawnEnemy();}
     // Extra enemies at higher levels
     if(gt%280===100)spawnRef();
     if(gt%380===200&&level>=2)spawnGW();
@@ -1142,7 +1203,7 @@ function drawEn() {
         X.scale(sc,sc);
         const pulse=1+Math.sin(e.pulsePhase)*.08;
         const cols= {
-            chase:['rgba(255,70,70,.25)','#f55'],shoot:['rgba(255,255,70,.25)','#ff5'],orbit:['rgba(70,255,255,.25)','#5ff'],split:['rgba(255,70,255,.25)','#f5f'],geo:['rgba(70,255,70,.25)','#5f5'],mini:['rgba(255,170,70,.25)','#fa5'],swarm:['rgba(255,150,50,.25)','#f95']
+            boss:['rgba(255,100,40,.3)','#ff8c32'],chase:['rgba(255,70,70,.25)','#f55'],shoot:['rgba(255,255,70,.25)','#ff5'],orbit:['rgba(70,255,255,.25)','#5ff'],split:['rgba(255,70,255,.25)','#f5f'],geo:['rgba(70,255,70,.25)','#5f5'],mini:['rgba(255,170,70,.25)','#fa5'],swarm:['rgba(255,150,50,.25)','#f95']
         };
         const[fc,sc2]=cols[e.type]||cols.chase;
         // Outer glow
@@ -1160,6 +1221,8 @@ function drawEn() {
         X.shadowBlur=e.fl>0?15:6;
         poly(0,0,e.r*pulse,e.verts,e.a,ff||fc,ss,2);
         X.shadowBlur=0;
+        // Boss ring and core geometry
+        if(e.type==='boss'){X.strokeStyle='#ffd08a';X.lineWidth=2;X.beginPath();X.arc(0,0,e.r+9+Math.sin(gt*.08)*3,0,6.28);X.stroke();X.rotate(gt*.006);for(let k=0;k<3;k++)poly(0,0,e.r*(.7+k*.15),6,e.a+k*1.047,null,k===1?'#ffb347':'#ff5252',1.5);}
         // Inner geometry
         poly(0,0,e.r*.45,e.verts,-e.a*1.5,null,ss,.8);
         // Eye/core
@@ -1437,6 +1500,18 @@ function drawFT() {
     X.globalAlpha=1;
 
 }
+function drawGhostReplay(){
+    if(ghostTimer<=0||ghostPath.length<2)return;
+    X.save(); X.globalAlpha=Math.min(1,ghostTimer/55); X.strokeStyle='#fff1b8'; X.shadowColor='#ff8c32'; X.shadowBlur=18; X.lineWidth=3; X.beginPath(); X.moveTo(ghostPath[0].x,ghostPath[0].y); for(const pt of ghostPath)X.lineTo(pt.x,pt.y); X.stroke(); X.restore();
+}
+function drawUpgrade(){
+    X.fillStyle='rgba(0,3,14,.88)';X.fillRect(0,0,W(),H());
+    X.textAlign='center';X.fillStyle='#ffb347';X.shadowColor='#ff8c32';X.shadowBlur=18;X.font=`bold ${Math.min(34,W()*.045)}px Courier New`;X.fillText('CORE UPGRADE',W()/2,H()*.28);X.shadowBlur=0;
+    X.fillStyle='#9aa8bd';X.font=`${Math.min(14,W()*.019)}px Courier New`;X.fillText('CHOOSE ONE MODIFICATION TO CONTINUE',W()/2,H()*.34);
+    const cardW=Math.min(260,W()*.27),gap=16,total=cardW*3+gap*2,start=(W()-total)/2,cy=H()*.42,ch=Math.min(210,H()*.32);
+    upgradeChoices.forEach((u,i)=>{const x=start+i*(cardW+gap);X.fillStyle='rgba(18,28,46,.96)';X.strokeStyle='#ff8c32';X.lineWidth=1.5;X.beginPath();X.roundRect(x,cy,cardW,ch,12);X.fill();X.stroke();X.fillStyle='#ffb347';X.font=`bold ${Math.min(17,W()*.022)}px Courier New`;X.fillText(`${i+1}. ${u.name}`,x+cardW/2,cy+40);X.fillStyle='#e3e8f0';X.font=`${Math.min(13,W()*.017)}px Courier New`;wrapText(u.desc,x+cardW/2,cy+80,cardW-30,20);X.fillStyle='#7f91a8';X.font='11px Courier New';X.fillText(isMob?'TAP TO SELECT':`PRESS ${i+1} / CLICK`,x+cardW/2,cy+ch-20);});
+}
+function wrapText(text,x,y,maxWidth,lineHeight){const words=text.split(' ');let line='';for(const word of words){const test=line?line+' '+word:word;if(X.measureText(test).width>maxWidth&&line){X.fillText(line,x,y);line=word;y+=lineHeight;}else line=test;}if(line)X.fillText(line,x,y);}
 function drawHUD() {
     if(!P)return;
     // Health bar with gradient
@@ -1509,6 +1584,7 @@ function drawHUD() {
     X.fillStyle='#667';
     X.font='11px Courier New';
     X.fillText(`◈ LEVEL ${level} ◈`,W()/2,50);
+    const boss=enemies.find(e=>e.type==='boss');if(boss){const bw=Math.min(420,W()*.48),bh=10,bx=(W()-bw)/2,by=H()-36;X.fillStyle='rgba(0,0,0,.65)';X.fillRect(bx-2,by-2,bw+4,bh+4);X.fillStyle='#ff4b35';X.fillRect(bx,by,bw*Math.max(0,boss.hp/boss.mhp),bh);X.strokeStyle='#ffb347';X.strokeRect(bx,by,bw,bh);X.fillStyle='#ffb347';X.font='bold 11px Courier New';X.textAlign='center';X.fillText('THE ARCHITECT',W()/2,by-7);}
     // Combo display
     if(combo>1) {
         const ca=comboT/150;
@@ -1690,7 +1766,7 @@ function drawMenu() {
     // Features with icons
     const fy=H()*.74;
     X.font=`${Math.min(11,W()*.017)}px Courier New`;
-    const feats=[['↗','Ricochet bullets for bonus damage','#f4f'],['◉','Gravity wells bend trajectories','#66f'],['×','Build combos for multipliers','#ff4'],['♦','Collect powerups to upgrade','#4f4'],['⚡','Manage energy for sustained fire','#4ff']];
+    const feats=[['↗','Bank shots for bonus score','#ffb347'],['◉','Gravity wells bend trajectories','#66f'],['×','Combos, upgrades & boss battles','#ff4'],['♦','Collect powerups to upgrade','#4f4'],['⚡','Manage energy for sustained fire','#4ff']];
     feats.forEach((f,i)=> {
         X.fillStyle=f[2];X.fillText(f[0],W()/2-180,fy+i*17);X.fillStyle='#778';X.fillText(f[1],W()/2,fy+i*17);
     });
@@ -1773,9 +1849,11 @@ function drawOver() {
     // Top scores
     X.fillStyle='#667';
     X.font=`${Math.min(11,W()*.018)}px Courier New`;
-    X.fillText('─── TOP SCORES ───',W()/2,H()*.62);
+    X.fillText(`KILLS ${runStats.kills}  ·  BANK SHOTS ${runStats.ricochetKills}  ·  BOUNCES ${runStats.bounces}`,W()/2,H()*.62);
+    X.fillText(`SHOTS ${runStats.shots}  ·  TIME ${Math.floor((Date.now()-(runStats.startTime||Date.now()))/1000)}s`,W()/2,H()*.645);
+    X.fillText('─── TOP SCORES ───',W()/2,H()*.68);
     hiScores.slice(0,5).forEach((s,i)=> {
-        const hi=s.s===score;X.fillStyle=hi?'#0ff':i<3?['#ff0','#ccc','#c84'][i]:'#556';X.font=`${hi?'bold ':''}${Math.min(13,W()*.02)}px Courier New`;X.fillText(`${(i+1)}. ${s.s.toString().padStart(8,'0')}  LV${s.l}`,W()/2,H()*.66+i*20);
+        const hi=s.s===score;X.fillStyle=hi?'#0ff':i<3?['#ff0','#ccc','#c84'][i]:'#556';X.font=`${hi?'bold ':''}${Math.min(13,W()*.02)}px Courier New`;X.fillText(`${(i+1)}. ${s.s.toString().padStart(8,'0')}  LV${s.l}`,W()/2,H()*.715+i*17);
     });
     const pulse=Math.sin(menuT*3.5)*.3+.7;
     X.fillStyle=`rgba(0,255,255,${pulse})`;
@@ -1862,10 +1940,12 @@ function draw() {
         drawScanlines();
         return
     }
+    if(gs===ST.UPGRADE){drawUpgrade();drawVignette();drawScanlines();return;}
     X.save();
     X.translate(shake.x,shake.y);
     drawBG();
     drawGrid();
+    drawGhostReplay();
     drawGW();
     drawRefs();
     drawPicks();
