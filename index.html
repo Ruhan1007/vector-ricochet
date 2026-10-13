@@ -131,6 +131,61 @@ let vj= {
 };
 let isMob='ontouchstart'in window;
 let menuT=0;
+// Selectable planetary environments. The selected theme is used in both the homepage preview and gameplay.
+const PLANET_THEMES=[
+ {name:'EARTH',sub:'BLUE MARBLE',base:'#020b19',glow:'#1678a8',land:'#32865c',accent:'#68d8ff',kind:'earth'},
+ {name:'MOON',sub:'LUNAR SURFACE',base:'#080a13',glow:'#747b8b',land:'#a6acb8',accent:'#d9e0ed',kind:'moon'},
+ {name:'MARS',sub:'RED PLANET',base:'#160806',glow:'#a84427',land:'#d66b43',accent:'#ffad78',kind:'mars'},
+ {name:'SATURN',sub:'RINGED GIANT',base:'#110c08',glow:'#b78b4b',land:'#d4b77b',accent:'#ffe0a0',kind:'saturn'},
+ {name:'NEPTUNE',sub:'ICE GIANT',base:'#030820',glow:'#315fe2',land:'#3a8dff',accent:'#8de7ff',kind:'neptune'},
+ {name:'EUROPA',sub:'FROZEN OCEAN',base:'#07131b',glow:'#4b9a9a',land:'#b2d8cf',accent:'#d5fff1',kind:'europa'}
+];
+let selectedPlanet=0;
+function planetButtonLayout(){
+ const gap=8, total=Math.min(W()-24,690), cardW=Math.min(108,(total-gap*5)/6), all=cardW*6+gap*5;
+ return {cardW,gap,start:(W()-all)/2,y:H()*.425};
+}
+function planetButtonAt(px,py){
+ const l=planetButtonLayout();
+ for(let i=0;i<PLANET_THEMES.length;i++){const x=l.start+i*(l.cardW+l.gap);if(px>=x&&px<=x+l.cardW&&py>=l.y-28&&py<=l.y+38)return i;}
+ return -1;
+}
+function drawPlanetBackdrop(){
+ const t=PLANET_THEMES[selectedPlanet];
+ X.fillStyle=t.base;X.fillRect(0,0,W(),H());
+ // Diffuse atmospheric light
+ const gx=W()*.78,gy=H()*.54,gr=X.createRadialGradient(gx,gy,5,gx,gy,Math.max(W(),H())*.72);
+ gr.addColorStop(0,t.glow+'44');gr.addColorStop(.45,t.glow+'18');gr.addColorStop(1,'rgba(0,0,0,0)');
+ X.fillStyle=gr;X.fillRect(0,0,W(),H());
+ // Large planetary body with procedural surface detail (no external image assets required).
+ const r=Math.min(W(),H())*.34,cx=W()*.82,cy=H()*.56;
+ if(t.kind==='saturn'){
+  X.save();X.translate(cx,cy);X.rotate(-.22);X.strokeStyle=t.accent+'55';X.lineWidth=Math.max(8,r*.13);X.beginPath();X.ellipse(0,0,r*1.55,r*.42,0,0,Math.PI*2);X.stroke();X.strokeStyle=t.accent+'22';X.lineWidth=Math.max(3,r*.05);X.beginPath();X.ellipse(0,0,r*1.75,r*.5,0,0,Math.PI*2);X.stroke();X.restore();
+ }
+ const pg=X.createRadialGradient(cx-r*.35,cy-r*.38,r*.05,cx,cy,r*1.1);
+ pg.addColorStop(0,t.accent);pg.addColorStop(.38,t.glow);pg.addColorStop(1,t.base);
+ X.save();X.beginPath();X.arc(cx,cy,r,0,Math.PI*2);X.clip();X.fillStyle=pg;X.fillRect(cx-r,cy-r,2*r,2*r);
+ for(let i=0;i<18;i++){
+  const xx=cx+(Math.sin(i*12.37)*.78)*r, yy=cy+(Math.cos(i*7.91)*.78)*r;
+  const rr=(.025+(i%4)*.012)*r;
+  X.globalAlpha=t.kind==='moon'?.17:.13;X.fillStyle=t.kind==='earth'?(i%2?'#59b76d':'#b3e8ff'):t.land;
+  X.beginPath();X.ellipse(xx,yy,rr*1.7,rr*(t.kind==='mars'?1.8:.8),i*.7,0,Math.PI*2);X.fill();
+ }
+ if(t.kind==='earth'){
+  X.globalAlpha=.24;X.strokeStyle='#d6f8ff';X.lineWidth=2;
+  for(let j=-2;j<=2;j++){X.beginPath();X.ellipse(cx,cy,r*.95,r*(.25+Math.abs(j)*.13),0,0,Math.PI*2);X.stroke();}
+ } else if(t.kind==='moon'){
+  for(let i=0;i<13;i++){const xx=cx+Math.sin(i*8.1)*r*.7,yy=cy+Math.cos(i*5.2)*r*.7,rr=r*(.025+(i%3)*.018);X.globalAlpha=.18;X.strokeStyle='#171c29';X.lineWidth=3;X.beginPath();X.arc(xx,yy,rr,0,Math.PI*2);X.stroke();}
+ } else if(t.kind==='mars'){
+  X.globalAlpha=.2;X.strokeStyle='#4e1a12';X.lineWidth=3;for(let i=0;i<6;i++){X.beginPath();X.moveTo(cx-r,cy-r*.5+i*r*.18);X.bezierCurveTo(cx-r*.3,cy-r*.8+i*r*.15,cx+r*.2,cy+r*.5+i*r*.1,cx+r,cy+r*.1+i*r*.12);X.stroke();}
+ } else if(t.kind==='europa'){
+  X.globalAlpha=.32;X.strokeStyle='#e1fff7';X.lineWidth=2;for(let i=0;i<11;i++){X.beginPath();let xx=cx+Math.sin(i*4.7)*r*.85,yy=cy+Math.cos(i*6.3)*r*.8;X.moveTo(xx,yy);X.lineTo(xx+Math.sin(i)*r*.18,yy+Math.cos(i*2)*r*.3);X.stroke();}
+ }
+ X.restore();X.globalAlpha=1;
+ // Soft terminator and subtle rim light
+ X.strokeStyle=t.accent+'55';X.lineWidth=2;X.beginPath();X.arc(cx,cy,r,Math.PI*.62,Math.PI*1.6);X.stroke();
+}
+
 function initStars() {
     stars=[];
     for(let i=0;i<300;i++)stars.push( {
@@ -545,7 +600,10 @@ function startGame() {
 }
 // Input
 document.addEventListener('keydown',e=> {
-    keys[e.code]=true;if(e.code==='Escape'||e.code==='KeyP') {
+    keys[e.code]=true;
+    if(gs===ST.MENU&&(e.code==='ArrowLeft'||e.code==='ArrowRight')){selectedPlanet=(selectedPlanet+(e.code==='ArrowRight'?1:PLANET_THEMES.length-1))%PLANET_THEMES.length;return;}
+    if(gs===ST.MENU&&e.code==='KeyH'){gs=ST.SCORES;return;}
+    if(e.code==='Escape'||e.code==='KeyP') {
         if(gs===ST.PLAY)gs=ST.PAUSE;else if(gs===ST.PAUSE)gs=ST.PLAY;
     }
     if(gs===ST.UPGRADE&&['Digit1','Digit2','Digit3'].includes(e.code)){chooseUpgrade(Number(e.code.slice(-1))-1);return;}
@@ -588,9 +646,15 @@ C.addEventListener('mousedown',e=> {
         if(hitActionButton(e.clientX,e.clientY,W()/2-100,cy,190,40)){startGame();return;}
         return;
     }
-    mdown=true;if(gs===ST.MENU) {
-        startGame();return
+    if(gs===ST.MENU) {
+        const pi=planetButtonAt(e.clientX,e.clientY);
+        if(pi>=0){selectedPlanet=pi;return;}
+        const bsy=H()*.565;
+        if(hitActionButton(e.clientX,e.clientY,W()/2,bsy,280,44)){startGame();return;}
+        if(e.clientY>H()*.91){gs=ST.SCORES;return;}
+        return;
     }
+    mdown=true;
     if(gs===ST.SCORES) {
         gs=ST.MENU;return
     }
@@ -615,7 +679,10 @@ C.addEventListener('touchstart',e=> {
         gs=ST.PLAY;return;
     }
     if(gs===ST.MENU) {
-        startGame();return
+        const pi=planetButtonAt(tx,ty);
+        if(pi>=0){selectedPlanet=pi;return;}
+        if(hitActionButton(tx,ty,W()/2,H()*.565,280,44)){startGame();return;}
+        return;
     }
     if(gs===ST.SCORES) {
         gs=ST.MENU;return
@@ -1675,125 +1742,74 @@ function drawMenu() {
     menuT+=.016;
     drawBG();
     drawGrid();
-    // Animated geometric decorations
+    // Keep menu typography readable over the animated planetary preview.
+    const panelW=Math.min(760,W()*.94), panelX=(W()-panelW)/2;
+    X.save();
+    X.fillStyle='rgba(0,5,16,.72)';
+    X.strokeStyle='rgba(70,190,220,.22)'; X.lineWidth=1;
+    X.beginPath(); X.roundRect(panelX,H()*.105,panelW,H()*.79,18); X.fill(); X.stroke();
+    X.restore();
     for(let i=0;i<5;i++) {
-        const a=menuT*.3+i*1.256;
-        const r=80+i*40;
-        const x=W()/2+Math.cos(a)*r;
-        const y=H()*.32+Math.sin(a*.7)*30;
-        X.globalAlpha=.06+Math.sin(menuT+i)*.03;
+        const a=menuT*.3+i*1.256, r=80+i*40;
+        const x=W()/2+Math.cos(a)*r, y=H()*.28+Math.sin(a*.7)*30;
+        X.globalAlpha=.05+Math.sin(menuT+i)*.025;
         poly(x,y,25+i*8,3+i,menuT*.5+i,null,`hsl(${180+i*20},100%,60%)`,1);
-
     }
     X.globalAlpha=1;
-    // Animated floating particles
-    if(Math.random()<.15) {
-        menuParticles.push( {
-            x:Math.random()*W(),y:H()+5,vx:(Math.random()-.5)*1.5,vy:-1.5-Math.random()*2,life:120+Math.random()*80,ml:200,sz:2+Math.random()*3,h:180+Math.random()*60
-        });
-
-    }
+    if(Math.random()<.15) menuParticles.push({x:Math.random()*W(),y:H()+5,vx:(Math.random()-.5)*1.5,vy:-1.5-Math.random()*2,life:120+Math.random()*80,ml:200,sz:2+Math.random()*3,h:180+Math.random()*60});
     for(let i=menuParticles.length-1;i>=0;i--) {
-        const p=menuParticles[i];
-        p.x+=p.vx;
-        p.y+=p.vy;
-        p.life--;
-        // Remove expired particles before drawing: arc() throws when its radius is negative.
-        if(p.life<=0) {
-            menuParticles.splice(i,1);
-            continue;
-
-        }
-        const fade=Math.max(0,Math.min(1,p.life/p.ml));
-        const radius=Math.max(0,p.sz*fade);
-        X.globalAlpha=fade;
-        X.fillStyle=`hsl(${p.h},100%,60%)`;
-        X.beginPath();
-        X.arc(p.x,p.y,radius,0,Math.PI*2);
-        X.fill();
-
+        const p=menuParticles[i]; p.x+=p.vx; p.y+=p.vy; p.life--;
+        if(p.life<=0){menuParticles.splice(i,1);continue;}
+        X.globalAlpha=Math.max(0,Math.min(1,p.life/p.ml)); X.fillStyle=`hsl(${p.h},100%,60%)`;
+        X.beginPath(); X.arc(p.x,p.y,Math.max(0,p.sz*X.globalAlpha),0,Math.PI*2); X.fill();
     }
     X.globalAlpha=1;
-    const ty=H()*.25;
-    const fs=Math.min(56,W()*.075);
-    // Title with intense glow
-    X.shadowColor='#0ff';
-    X.shadowBlur=12;
-    X.fillStyle='#0ff';
+    const ty=H()*.19;
+    const fs=Math.min(46,W()*.058,H()*.075);
+    X.save(); X.textAlign='center'; X.textBaseline='alphabetic';
+    X.shadowColor='#00ffff'; X.shadowBlur=10; X.fillStyle='#42ffff';
     X.font=`bold ${fs}px Courier New`;
-    X.textAlign='center';
-    X.fillText('VECTOR',W()/2,ty);
-    X.fillText('RICOCHET',W()/2,ty+fs+8);
-    // Double render for more glow
-    X.shadowBlur=18;
-    X.globalAlpha=.18;
-    X.fillText('VECTOR',W()/2,ty);
-    X.fillText('RICOCHET',W()/2,ty+fs+8);
-    X.globalAlpha=1;
+    X.fillText('VECTOR',W()/2,ty); X.fillText('RICOCHET',W()/2,ty+fs+3);
     X.shadowBlur=0;
-    // Animated underline
-    const uy=ty+fs+25;
-    X.strokeStyle='#0ff';
-    X.lineWidth=2;
-    X.globalAlpha=.6;
-    X.beginPath();
-    const uw=Math.min(350,W()*.4);
-    for(let x=-uw/2;x<=uw/2;x+=3) {
-        const yy=uy+Math.sin((x+menuT*120)*.04)*4;
-        x===-uw/2?X.moveTo(W()/2+x,yy):X.lineTo(W()/2+x,yy);
-
-    }
-    X.stroke();
-    X.globalAlpha=1;
-    // Subtitle
-    X.fillStyle='#899';
-    X.font=`${Math.min(14,W()*.022)}px Courier New`;
-    X.fillText('⬡ GEOMETRY-POWERED SPACE COMBAT ⬡',W()/2,uy+25);
-    // Start button
-    const pulse=Math.sin(menuT*3.5)*.3+.7;
-    const bsy=H()*.52;
-    // Button background
-    X.fillStyle=`rgba(0,255,255,${pulse*.12})`;
-    X.beginPath();
-    X.roundRect(W()/2-140,bsy-22,280,44,8);
-    X.fill();
-    X.strokeStyle=`rgba(0,255,255,${pulse})`;
-    X.lineWidth=2;
-    X.beginPath();
-    X.roundRect(W()/2-140,bsy-22,280,44,8);
-    X.stroke();
-    X.fillStyle=`rgba(0,255,255,${pulse})`;
-    X.shadowColor='#0ff';
-    X.shadowBlur=6*pulse;
-    X.font=`bold ${Math.min(20,W()*.03)}px Courier New`;
-    X.fillText(isMob?'⊳ TAP TO START ⊲':'⊳ ENTER / CLICK TO START ⊲',W()/2,bsy+6);
-    X.shadowBlur=0;
-    // Controls
-    const iy=H()*.64;
-    X.fillStyle='#667';
-    X.font=`${Math.min(12,W()*.019)}px Courier New`;
-    if(!isMob) {
-        X.fillText('WASD/ARROWS: Move  ·  MOUSE: Aim & Shoot',W()/2,iy);
-        X.fillText('SHIFT: Dash  ·  P/ESC: Pause  ·  H: High Scores',W()/2,iy+20);
-
-    }else {
-        X.fillText('LEFT: Move  ·  RIGHT: Aim & Shoot  ·  2 FINGERS: Dash',W()/2,iy);
-
-    }
-    // Features with icons
-    const fy=H()*.74;
-    X.font=`${Math.min(11,W()*.017)}px Courier New`;
-    const feats=[['↗','Bank shots for bonus score','#ffb347'],['◉','Gravity wells bend trajectories','#66f'],['×','Combos, upgrades & boss battles','#ff4'],['♦','Collect powerups to upgrade','#4f4'],['⚡','Manage energy for sustained fire','#4ff']];
-    feats.forEach((f,i)=> {
-        X.fillStyle=f[2];X.fillText(f[0],W()/2-180,fy+i*17);X.fillStyle='#778';X.fillText(f[1],W()/2,fy+i*17);
+    const uy=ty+fs+15;
+    X.strokeStyle='#00dfe8'; X.lineWidth=2; X.globalAlpha=.8;
+    X.beginPath(); X.moveTo(W()/2-Math.min(170,W()*.22),uy); X.lineTo(W()/2+Math.min(170,W()*.22),uy); X.stroke(); X.globalAlpha=1;
+    // Subtitle sits on its own row, well clear of the title and planet cards.
+    X.fillStyle='#d7f7ff'; X.font=`bold ${Math.min(12,W()*.016)}px Courier New`;
+    X.fillText('GEOMETRY-POWERED SPACE COMBAT',W()/2,uy+20);
+    X.fillStyle='#ffffff'; X.font=`bold ${Math.min(13,W()*.017)}px Courier New`;
+    X.fillText('SELECT YOUR BATTLEFIELD',W()/2,H()*.355);
+    const pl=planetButtonLayout();
+    PLANET_THEMES.forEach((planet,i)=>{
+        const x=pl.start+i*(pl.cardW+pl.gap), selected=i===selectedPlanet;
+        X.fillStyle=selected?'rgba(0,210,230,.2)':'rgba(1,10,24,.94)';
+        X.strokeStyle=selected?'#00ffff':'#527184'; X.lineWidth=selected?2:1;
+        X.beginPath(); X.roundRect(x,pl.y-25,pl.cardW,60,6); X.fill(); X.stroke();
+        const cx=x+pl.cardW/2,cy=pl.y-7,pr=Math.min(12,pl.cardW*.14);
+        const mini=X.createRadialGradient(cx-pr*.4,cy-pr*.5,1,cx,cy,pr*1.4);
+        mini.addColorStop(0,planet.accent); mini.addColorStop(1,planet.glow);
+        X.fillStyle=mini; X.beginPath(); X.arc(cx,cy,pr,0,Math.PI*2); X.fill();
+        if(planet.kind==='saturn'){X.strokeStyle=planet.accent;X.lineWidth=2;X.beginPath();X.ellipse(cx,cy,pr*1.55,pr*.45,-.25,0,Math.PI*2);X.stroke();}
+        X.fillStyle=selected?'#7fffff':'#e0edf7'; X.font=`bold ${Math.min(10,W()*.014)}px Courier New`;
+        X.fillText(planet.name,cx,pl.y+22);
+        if(selected){X.fillStyle='#ffd080';X.font='bold 9px Courier New';X.fillText('SELECTED',cx,pl.y+47);}
     });
-    // High score
-    if(hiScores.length>0) {
-        X.fillStyle='#cc0';
-        X.font=`bold ${Math.min(14,W()*.022)}px Courier New`;
-        X.fillText(`★ HIGH SCORE: ${hiScores[0].s.toString().padStart(8,'0')} ★`,W()/2,H()*.94);
-
-    }
+    const pulse=Math.sin(menuT*3.5)*.12+.88, bsy=H()*.565;
+    X.fillStyle=`rgba(0,255,255,${pulse*.13})`; X.strokeStyle=`rgba(0,255,255,${pulse})`; X.lineWidth=2;
+    X.beginPath(); X.roundRect(W()/2-140,bsy-22,280,44,8); X.fill(); X.stroke();
+    X.fillStyle='#69ffff'; X.shadowColor='#00ffff'; X.shadowBlur=7;
+    X.font=`bold ${Math.min(19,W()*.027)}px Courier New`;
+    X.fillText(isMob?'TAP TO START':'ENTER / CLICK TO START',W()/2,bsy+6); X.shadowBlur=0;
+    const iy=H()*.655;
+    X.fillStyle='#e1eaf5'; X.font=`bold ${Math.min(12,W()*.016)}px Courier New`;
+    if(!isMob){X.fillText('WASD / ARROWS: MOVE   |   MOUSE: AIM & SHOOT',W()/2,iy);X.fillText('SHIFT: DASH   |   P / ESC: PAUSE   |   H: HIGH SCORES',W()/2,iy+19);}
+    else X.fillText('LEFT: MOVE   |   RIGHT: AIM & SHOOT   |   2 FINGERS: DASH',W()/2,iy);
+    const fy=H()*.755;
+    const feats=[['↗','Bank shots for bonus score','#ffca72'],['◉','Gravity wells bend trajectories','#aab5ff'],['×','Combos, upgrades & boss battles','#ffff80'],['♦','Collect powerups to upgrade','#8dffad'],['⚡','Manage energy for sustained fire','#8fffff']];
+    X.font=`${Math.min(11,W()*.014)}px Courier New`;
+    feats.forEach((f,i)=>{X.fillStyle=f[2];X.fillText(f[0],W()/2-174,fy+i*16);X.fillStyle='#d9e5f2';X.fillText(f[1],W()/2+8,fy+i*16);});
+    if(hiScores.length>0){X.fillStyle='#fff45c';X.font=`bold ${Math.min(14,W()*.019)}px Courier New`;X.fillText(`HIGH SCORE: ${hiScores[0].s.toString().padStart(8,'0')}`,W()/2,H()*.94);}
+    X.restore();
 }
 let menuParticles=[];
 function drawActionButton(label,cx,cy,w=170,h=38,accent='#0ff') {
@@ -1963,14 +1979,8 @@ function draw() {
     X.textBaseline='alphabetic';
     X.lineWidth=1;
     X.clearRect(0,0,W(),H());
-    // Deep space background
-    const bg=X.createLinearGradient(0,0,W(),H());
-    bg.addColorStop(0,'#000812');
-    bg.addColorStop(.3,'#000618');
-    bg.addColorStop(.7,'#08001a');
-    bg.addColorStop(1,'#000812');
-    X.fillStyle=bg;
-    X.fillRect(0,0,W(),H());
+    // Selected planetary environment forms the base layer for every game state.
+    drawPlanetBackdrop();
     if(gs===ST.MENU) {
         drawMenu();
         drawVignette();
