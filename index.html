@@ -128,16 +128,16 @@ let shake= {
     x:0,y:0,i:0,d:0
 };
 let playerName='';
-try { playerName=(localStorage.getItem('vrPlayerName')||'').trim().slice(0,18); } catch(e) {}
+// Always start with a blank name field; don't preload a name from a previous visit.
+try { localStorage.removeItem('vrPlayerName'); } catch(e) {}
 const nameGate=document.getElementById('nameGate');
 const playerNameInput=document.getElementById('playerNameInput');
 const nameError=document.getElementById('nameError');
-playerNameInput.value=playerName;
+playerNameInput.value='';
 function confirmPlayerName(value) {
     const clean=String(value||'').replace(/[<>]/g,'').trim().replace(/\s+/g,' ').slice(0,18);
     if(!clean) { nameError.textContent='Please enter a name to continue.'; playerNameInput.focus(); return false; }
     playerName=clean;
-    try { localStorage.setItem('vrPlayerName',playerName); } catch(e) {}
     nameGate.style.display='none';
     return true;
 }
@@ -632,6 +632,11 @@ function startGame() {
 }
 // Input
 document.addEventListener('keydown',e=> {
+    // Let the browser handle normal text editing while the in-game name form is open.
+    // The global game controls must not intercept letters, Backspace, Space, or Enter in the input.
+    if(nameGate.style.display!=='none' && (e.target===playerNameInput || nameGate.contains(e.target))) {
+        if(e.target===playerNameInput) return;
+    }
     keys[e.code]=true;
     if(gs===ST.MENU&&(e.code==='ArrowLeft'||e.code==='ArrowRight')){selectedPlanet=(selectedPlanet+(e.code==='ArrowRight'?1:PLANET_THEMES.length-1))%PLANET_THEMES.length;return;}
     if(gs===ST.MENU&&e.code==='KeyH'){gs=ST.SCORES;return;}
