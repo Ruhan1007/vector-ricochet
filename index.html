@@ -26,13 +26,29 @@
             width: 100vw;
         }
 
-        canvas {
-            display: block;
-        }
+        canvas { display: block; }
+        #nameGate { position:fixed; inset:0; z-index:10; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,5,15,.82); backdrop-filter:blur(8px); }
+        #nameCard { width:min(420px,100%); padding:30px 26px; text-align:center; border:1px solid #00dce8; border-radius:12px; background:linear-gradient(145deg,rgba(4,24,42,.98),rgba(1,7,19,.98)); box-shadow:0 0 32px rgba(0,230,255,.18); color:#e8fbff; }
+        #nameCard h1 { color:#00f0ff; font-size:clamp(24px,5vw,34px); letter-spacing:2px; margin-bottom:10px; text-shadow:0 0 14px rgba(0,240,255,.45); }
+        #nameCard p { color:#b7cbd8; font-size:13px; line-height:1.6; margin-bottom:20px; }
+        #playerNameInput { width:100%; padding:13px 12px; color:#fff; background:#061321; border:1px solid #43677a; border-radius:6px; outline:none; font:16px 'Courier New',monospace; text-align:center; user-select:text; touch-action:auto; }
+        #playerNameInput:focus { border-color:#00f0ff; box-shadow:0 0 0 2px rgba(0,240,255,.14); }
+        #enterGame { width:100%; margin-top:14px; padding:13px; border:1px solid #00eafa; border-radius:6px; background:rgba(0,220,235,.12); color:#63fbff; font:bold 15px 'Courier New',monospace; cursor:pointer; touch-action:manipulation; }
+        #enterGame:hover { background:rgba(0,220,235,.25); }
+        #nameError { min-height:16px; margin-top:9px; color:#ff8c8c; font-size:12px; }
     </style>
 </head>
 <body>
     <canvas id="g"></canvas>
+    <div id="nameGate" role="dialog" aria-modal="true" aria-labelledby="nameTitle">
+      <form id="nameCard">
+        <h1 id="nameTitle">VECTOR RICOCHET</h1>
+        <p>IDENTIFY YOUR PILOT<br>Enter a name to appear on the leaderboard.</p>
+        <input id="playerNameInput" type="text" maxlength="18" autocomplete="nickname" placeholder="Your player name" required />
+        <button id="enterGame" type="submit">ENTER THE ARENA</button>
+        <div id="nameError" aria-live="polite"></div>
+      </form>
+    </div>
     <script>
 const C=document.getElementById('g'),X=C.getContext('2d');
 let DPR=1;
@@ -111,11 +127,27 @@ let upgradeChoices=[],upgradeReturnState=ST.PLAY,bossLevelSpawned=0,slowMo=0,gho
 let shake= {
     x:0,y:0,i:0,d:0
 };
+let playerName='';
+try { playerName=(localStorage.getItem('vrPlayerName')||'').trim().slice(0,18); } catch(e) {}
+const nameGate=document.getElementById('nameGate');
+const playerNameInput=document.getElementById('playerNameInput');
+const nameError=document.getElementById('nameError');
+playerNameInput.value=playerName;
+function confirmPlayerName(value) {
+    const clean=String(value||'').replace(/[<>]/g,'').trim().replace(/\s+/g,' ').slice(0,18);
+    if(!clean) { nameError.textContent='Please enter a name to continue.'; playerNameInput.focus(); return false; }
+    playerName=clean;
+    try { localStorage.setItem('vrPlayerName',playerName); } catch(e) {}
+    nameGate.style.display='none';
+    return true;
+}
+document.getElementById('nameCard').addEventListener('submit',e=>{e.preventDefault();confirmPlayerName(playerNameInput.value);});
+// Use a fresh leaderboard key so sample/demo scores from earlier versions are not shown.
 let hiScores=[];
 try {
-    const savedScores=JSON.parse(localStorage.getItem('vrScores2')||'[]');
+    const savedScores=JSON.parse(localStorage.getItem('vrScores3')||'[]');
     hiScores=Array.isArray(savedScores)?savedScores.filter(s=>s&&Number.isFinite(Number(s.s))).map(s=>( {
-        s:Number(s.s),l:Number(s.l)||1,d:Number(s.d)||0
+        s:Number(s.s),l:Number(s.l)||1,d:Number(s.d)||0,n:String(s.n||'Pilot')
     })):[]
 }catch(e) {
     hiScores=[]
@@ -564,12 +596,12 @@ function gameOver() {
     addShake(20,40);
     sfxGameOver();
     hiScores.push( {
-        s:score,l:level,d:Date.now()
+        s:score,l:level,d:Date.now(),n:playerName
     });
     hiScores.sort((a,b)=>b.s-a.s);
     hiScores=hiScores.slice(0,10);
     try {
-        localStorage.setItem('vrScores2',JSON.stringify(hiScores))
+        localStorage.setItem('vrScores3',JSON.stringify(hiScores))
     }catch(e) {
         /* Storage may be disabled or full. */
     }
@@ -609,9 +641,11 @@ document.addEventListener('keydown',e=> {
     if(gs===ST.UPGRADE&&['Digit1','Digit2','Digit3'].includes(e.code)){chooseUpgrade(Number(e.code.slice(-1))-1);return;}
     if(e.code==='Enter'||e.code==='Space') {
         if(gs===ST.MENU) {
+            if(!playerName){nameGate.style.display='flex';playerNameInput.focus();return;}
             startGame();return
         }
         if(gs===ST.OVER) {
+            if(!playerName){nameGate.style.display='flex';playerNameInput.focus();return;}
             startGame();return
         }
         if(gs===ST.SCORES) {
@@ -650,7 +684,7 @@ C.addEventListener('mousedown',e=> {
         const pi=planetButtonAt(e.clientX,e.clientY);
         if(pi>=0){selectedPlanet=pi;return;}
         const bsy=H()*.565;
-        if(hitActionButton(e.clientX,e.clientY,W()/2,bsy,280,44)){startGame();return;}
+        if(hitActionButton(e.clientX,e.clientY,W()/2,bsy,280,44)){if(!playerName){nameGate.style.display='flex';playerNameInput.focus();return;}startGame();return;}
         if(e.clientY>H()*.91){gs=ST.SCORES;return;}
         return;
     }
@@ -1779,6 +1813,8 @@ function drawMenu() {
     X.fillText('GEOMETRY-POWERED SPACE COMBAT',W()/2,uy+20);
     X.fillStyle='#ffffff'; X.font=`bold ${Math.min(13,W()*.017)}px Courier New`;
     X.fillText('SELECT YOUR BATTLEFIELD',W()/2,H()*.355);
+    X.fillStyle='#ffd080'; X.font=`bold ${Math.min(12,W()*.016)}px Courier New`;
+    X.fillText(playerName?`PLAYER: ${playerName}  ·  CLICK TO START`:'ENTER YOUR PILOT NAME TO CONTINUE',W()/2,H()*.385);
     const pl=planetButtonLayout();
     PLANET_THEMES.forEach((planet,i)=>{
         const x=pl.start+i*(pl.cardW+pl.gap), selected=i===selectedPlanet;
@@ -1914,7 +1950,7 @@ function drawOver() {
     X.fillText(`SHOTS ${runStats.shots}  ·  TIME ${Math.floor((Date.now()-(runStats.startTime||Date.now()))/1000)}s`,W()/2,H()*.645);
     X.fillText('─── TOP SCORES ───',W()/2,H()*.68);
     hiScores.slice(0,5).forEach((s,i)=> {
-        const hi=s.s===score;X.fillStyle=hi?'#0ff':i<3?['#ff0','#ccc','#c84'][i]:'#556';X.font=`${hi?'bold ':''}${Math.min(13,W()*.02)}px Courier New`;X.fillText(`${(i+1)}. ${s.s.toString().padStart(8,'0')}  LV${s.l}`,W()/2,H()*.715+i*17);
+        const hi=s.s===score;X.fillStyle=hi?'#0ff':i<3?['#ff0','#ccc','#c84'][i]:'#556';X.font=`${hi?'bold ':''}${Math.min(13,W()*.02)}px Courier New`;X.fillText(`${(i+1)}. ${(s.n||'').slice(0,12).padEnd(12,' ')} ${s.s.toString().padStart(8,'0')}  LV${s.l}`,W()/2,H()*.715+i*17);
     });
     const pulse=Math.sin(menuT*3.5)*.3+.7;
     X.globalAlpha=pulse;
@@ -1942,7 +1978,7 @@ function drawScores() {
 
     }else {
         hiScores.slice(0,10).forEach((s,i)=> {
-            const rc=['#ff0','#ccc','#c84'];X.fillStyle=i<3?rc[i]:'#889';X.font=`${i<3?'bold ':''}${Math.min(16,W()*.025)}px Courier New`;X.textAlign='center';const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':` ${i+1}.`;X.fillText(`${medal} ${s.s.toString().padStart(8,'0')}  LEVEL ${(s.l||'?').toString().padStart(2,' ')}`,W()/2,110+i*35);
+            const rc=['#ff0','#ccc','#c84'];X.fillStyle=i<3?rc[i]:'#889';X.font=`${i<3?'bold ':''}${Math.min(16,W()*.025)}px Courier New`;X.textAlign='center';const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':` ${i+1}.`;X.fillText(`${medal} ${(s.n||'').slice(0,16)}  ${s.s.toString().padStart(8,'0')}  LV ${(s.l||'?')}`,W()/2,110+i*35);
         });
 
     }
@@ -2057,6 +2093,7 @@ function loop(t) {
 }
 initStars();
 menuParticles=[];
+playerNameInput.focus();
 requestAnimationFrame(loop);
     </script>
 </body>
