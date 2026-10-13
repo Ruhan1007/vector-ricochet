@@ -576,10 +576,19 @@ C.addEventListener('mousemove',e=> {
 C.addEventListener('mousedown',e=> {
     initAudio();
     if(gs===ST.UPGRADE){ const cardW=Math.min(260,W()*.27),gap=16,total=cardW*3+gap*2,start=(W()-total)/2; const idx=Math.floor((e.clientX-start)/(cardW+gap)); if(e.clientX>=start&&e.clientX<=start+total&&idx>=0&&idx<3)chooseUpgrade(idx); return; }
-    mdown=true;if(gs===ST.MENU) {
-        startGame();return
+    if(gs===ST.PAUSE) {
+        const cy=H()/2+105;
+        if(hitActionButton(e.clientX,e.clientY,W()/2-95,cy,150,38)){gs=ST.PLAY;return;}
+        if(hitActionButton(e.clientX,e.clientY,W()/2+95,cy,150,38)){startGame();return;}
+        return;
     }
     if(gs===ST.OVER) {
+        const cy=H()*.88;
+        if(hitActionButton(e.clientX,e.clientY,W()/2+115,cy,150,40)){goHomepage();return;}
+        if(hitActionButton(e.clientX,e.clientY,W()/2-100,cy,190,40)){startGame();return;}
+        return;
+    }
+    mdown=true;if(gs===ST.MENU) {
         startGame();return
     }
     if(gs===ST.SCORES) {
@@ -591,17 +600,25 @@ C.addEventListener('mouseup',()=> {
 });
 C.addEventListener('contextmenu',e=>e.preventDefault());
 C.addEventListener('touchstart',e=> {
-    e.preventDefault();initAudio();if(gs===ST.MENU) {
-        startGame();return
-    }
+    e.preventDefault();initAudio();
+    const tx=e.touches[0]?.clientX ?? 0, ty=e.touches[0]?.clientY ?? 0;
     if(gs===ST.OVER) {
+        const cy=H()*.88;
+        if(hitActionButton(tx,ty,W()/2+115,cy,150,40)){goHomepage();return;}
+        if(hitActionButton(tx,ty,W()/2-100,cy,190,40)){startGame();return;}
+        return;
+    }
+    if(gs===ST.PAUSE) {
+        const cy=H()/2+105;
+        if(hitActionButton(tx,ty,W()/2-95,cy,150,38)){gs=ST.PLAY;return;}
+        if(hitActionButton(tx,ty,W()/2+95,cy,150,38)){startGame();return;}
+        gs=ST.PLAY;return;
+    }
+    if(gs===ST.MENU) {
         startGame();return
     }
     if(gs===ST.SCORES) {
         gs=ST.MENU;return
-    }
-    if(gs===ST.PAUSE) {
-        gs=ST.PLAY;return
     }
     if(gs===ST.UPGRADE){const cardW=Math.min(260,W()*.27),gap=16,total=cardW*3+gap*2,start=(W()-total)/2;const idx=Math.floor((e.touches[0].clientX-start)/(cardW+gap));if(idx>=0&&idx<3)chooseUpgrade(idx);return;}
     const t=e.touches[0];if(e.touches.length===1) {
@@ -1779,6 +1796,32 @@ function drawMenu() {
     }
 }
 let menuParticles=[];
+function drawActionButton(label,cx,cy,w=170,h=38,accent='#0ff') {
+    const x=cx-w/2,y=cy-h/2;
+    X.save();
+    X.fillStyle='rgba(0,18,30,.88)';
+    X.strokeStyle=accent;
+    X.lineWidth=1.5;
+    X.shadowColor=accent;
+    X.shadowBlur=10;
+    X.fillRect(x,y,w,h);
+    X.strokeRect(x,y,w,h);
+    X.shadowBlur=0;
+    X.fillStyle=accent;
+    X.font=`bold ${Math.min(15,W()*.022)}px Courier New`;
+    X.textAlign='center';
+    X.textBaseline='middle';
+    X.fillText(label,cx,cy);
+    X.restore();
+}
+function hitActionButton(px,py,cx,cy,w=170,h=38) {
+    return px>=cx-w/2&&px<=cx+w/2&&py>=cy-h/2&&py<=cy+h/2;
+}
+function goHomepage(){
+    gs=ST.MENU;
+    mdown=false;touchAim=false;vj.on=false;vj.dx=0;vj.dy=0;
+    menuParticles=[];
+}
 function drawPause() {
     X.fillStyle='rgba(0,0,10,.65)';
     X.fillRect(0,0,W(),H());
@@ -1803,6 +1846,8 @@ function drawPause() {
     X.fillStyle='#556';
     X.font='12px Courier New';
     X.fillText(`SCORE: ${score}  ·  LEVEL: ${level}`,W()/2,H()/2+55);
+    drawActionButton('RESUME',W()/2-95,H()/2+105,150,38,'#0ff');
+    drawActionButton('RESTART',W()/2+95,H()/2+105,150,38,'#ffb347');
 
 }
 function drawOver() {
@@ -1856,12 +1901,10 @@ function drawOver() {
         const hi=s.s===score;X.fillStyle=hi?'#0ff':i<3?['#ff0','#ccc','#c84'][i]:'#556';X.font=`${hi?'bold ':''}${Math.min(13,W()*.02)}px Courier New`;X.fillText(`${(i+1)}. ${s.s.toString().padStart(8,'0')}  LV${s.l}`,W()/2,H()*.715+i*17);
     });
     const pulse=Math.sin(menuT*3.5)*.3+.7;
-    X.fillStyle=`rgba(0,255,255,${pulse})`;
-    X.shadowColor='#0ff';
-    X.shadowBlur=10*pulse;
-    X.font=`bold ${Math.min(18,W()*.028)}px Courier New`;
-    X.fillText(isMob?'⊳ TAP TO RESTART ⊲':'⊳ ENTER TO RESTART ⊲',W()/2,H()*.9);
-    X.shadowBlur=0;
+    X.globalAlpha=pulse;
+    drawActionButton(isMob?'RESTART':'ENTER TO RESTART',W()/2-100,H()*.88,190,40,'#0ff');
+    X.globalAlpha=1;
+    drawActionButton('HOMEPAGE',W()/2+115,H()*.88,150,40,'#ffb347');
 
 }
 function drawScores() {
